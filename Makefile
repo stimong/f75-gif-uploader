@@ -1,4 +1,4 @@
-APP_NAME := F75GifUploader
+APP_NAME := AulaGifUploader
 BUILD_DIR := build
 APP_DIR := $(BUILD_DIR)/$(APP_NAME).app
 APP_BIN := $(APP_DIR)/Contents/MacOS/$(APP_NAME)
@@ -22,7 +22,7 @@ $(BUILD_DIR):
 $(BUILD_DIR)/F75Probe: Sources/F75Probe/main.m | $(BUILD_DIR)
 	clang -fobjc-arc -Wall -Wextra -framework CoreGraphics -framework Foundation -framework ImageIO -framework IOKit -o $@ $<
 
-$(APP_BIN): Sources/F75GifUploader/main.m | $(BUILD_DIR)
+$(APP_BIN): Sources/AulaGifUploader/main.m | $(BUILD_DIR)
 	mkdir -p $(APP_DIR)/Contents/MacOS
 	clang -fobjc-arc -Wall -Wextra -framework AppKit -framework Foundation -framework ImageIO -framework UniformTypeIdentifiers -o $@ $<
 

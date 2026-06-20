@@ -2,7 +2,15 @@
 #import <ImageIO/ImageIO.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-static const NSUInteger MaxAllowedFrames = 120;
+@interface KeyboardPreset : NSObject
+@property(nonatomic, copy) NSString *name;
+@property(nonatomic) NSUInteger width;
+@property(nonatomic) NSUInteger height;
+@property(nonatomic) NSUInteger recommendedFrames;
+@end
+
+@implementation KeyboardPreset
+@end
 
 @interface ImageInfo : NSObject
 @property(nonatomic, copy) NSString *path;
@@ -12,11 +20,32 @@ static const NSUInteger MaxAllowedFrames = 120;
 @property(nonatomic) unsigned long long bytes;
 @property(nonatomic) BOOL animated;
 @property(nonatomic, copy) NSString *status;
-@property(nonatomic) BOOL acceptable;
+@property(nonatomic) BOOL readable;
 @end
 
 @implementation ImageInfo
 @end
+
+static KeyboardPreset *Preset(NSString *name, NSUInteger width, NSUInteger height, NSUInteger frames) {
+    KeyboardPreset *preset = [KeyboardPreset new];
+    preset.name = name;
+    preset.width = width;
+    preset.height = height;
+    preset.recommendedFrames = frames;
+    return preset;
+}
+
+static NSArray<KeyboardPreset *> *KeyboardPresets(void) {
+    static NSArray<KeyboardPreset *> *presets;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        presets = @[
+            Preset(@"AULA F108Pro", 240, 135, 32),
+            Preset(@"AULA F75 Max", 128, 128, 120)
+        ];
+    });
+    return presets;
+}
 
 static NSString *HumanSize(unsigned long long bytes) {
     double value = (double)bytes;
@@ -38,7 +67,7 @@ static ImageInfo *InspectImage(NSURL *url) {
     CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL);
     if (!source) {
         info.status = @"Unsupported image file.";
-        info.acceptable = NO;
+        info.readable = NO;
         return info;
     }
 
@@ -51,30 +80,19 @@ static ImageInfo *InspectImage(NSURL *url) {
     info.height = [properties[(NSString *)kCGImagePropertyPixelHeight] unsignedIntegerValue];
     CFRelease(source);
 
-    if (info.frames > MaxAllowedFrames) {
-        info.status = [NSString stringWithFormat:@"Too many frames: %lu / %lu", (unsigned long)info.frames, (unsigned long)MaxAllowedFrames];
-        info.acceptable = NO;
-        return info;
-    }
-
     if (info.width == 0 || info.height == 0) {
         info.status = @"Could not read image dimensions.";
-        info.acceptable = NO;
+        info.readable = NO;
         return info;
     }
 
-    if (info.width == 128 && info.height == 128) {
-        info.status = @"Ready. 128 x 128 image will upload as-is.";
-    } else {
-        info.status = @"Ready. The uploader will resize/crop to 128 x 128.";
-    }
-    info.acceptable = YES;
+    info.status = @"Ready.";
+    info.readable = YES;
     return info;
 }
 
 @interface DropView : NSView
 @property(nonatomic, copy) void (^fileHandler)(NSURL *url);
-@property(nonatomic, strong) NSColor *borderColor;
 @end
 
 @implementation DropView
@@ -108,8 +126,13 @@ static ImageInfo *InspectImage(NSURL *url) {
 }
 @end
 
-@interface AppDelegate : NSObject <NSApplicationDelegate>
+@interface AppDelegate : NSObject <NSApplicationDelegate, NSTextFieldDelegate>
 @property(nonatomic, strong) NSWindow *window;
+@property(nonatomic, strong) NSPopUpButton *modelPopup;
+@property(nonatomic, strong) NSTextField *widthField;
+@property(nonatomic, strong) NSTextField *heightField;
+@property(nonatomic, strong) NSTextField *frameLimitField;
+@property(nonatomic, strong) NSTextField *targetLabel;
 @property(nonatomic, strong) NSTextField *titleLabel;
 @property(nonatomic, strong) NSTextField *detailsLabel;
 @property(nonatomic, strong) NSTextField *statusLabel;
@@ -131,50 +154,76 @@ static ImageInfo *InspectImage(NSURL *url) {
 }
 
 - (void)buildWindow {
-    self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 440, 300)
+    self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 520, 420)
                                              styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable)
                                                backing:NSBackingStoreBuffered
                                                  defer:NO];
-    self.window.title = @"F75 GIF Uploader";
+    self.window.title = @"AULA GIF Uploader";
     self.window.releasedWhenClosed = NO;
     [self.window center];
 
     NSView *content = self.window.contentView;
-    DropView *drop = [[DropView alloc] initWithFrame:NSMakeRect(24, 86, 392, 158)];
+
+    [content addSubview:[self label:@"Keyboard" frame:NSMakeRect(24, 366, 90, 18) size:12 weight:NSFontWeightMedium color:NSColor.secondaryLabelColor alignment:NSTextAlignmentLeft]];
+    self.modelPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(24, 336, 180, 28) pullsDown:NO];
+    for (KeyboardPreset *preset in KeyboardPresets()) {
+        [self.modelPopup addItemWithTitle:preset.name];
+    }
+    self.modelPopup.target = self;
+    self.modelPopup.action = @selector(modelChanged:);
+    [content addSubview:self.modelPopup];
+
+    [content addSubview:[self label:@"Width" frame:NSMakeRect(224, 366, 70, 18) size:12 weight:NSFontWeightMedium color:NSColor.secondaryLabelColor alignment:NSTextAlignmentLeft]];
+    self.widthField = [self numberField:NSMakeRect(224, 336, 70, 28)];
+    [content addSubview:self.widthField];
+
+    [content addSubview:[self label:@"Height" frame:NSMakeRect(310, 366, 70, 18) size:12 weight:NSFontWeightMedium color:NSColor.secondaryLabelColor alignment:NSTextAlignmentLeft]];
+    self.heightField = [self numberField:NSMakeRect(310, 336, 70, 28)];
+    [content addSubview:self.heightField];
+
+    [content addSubview:[self label:@"Frames" frame:NSMakeRect(396, 366, 80, 18) size:12 weight:NSFontWeightMedium color:NSColor.secondaryLabelColor alignment:NSTextAlignmentLeft]];
+    self.frameLimitField = [self numberField:NSMakeRect(396, 336, 80, 28)];
+    [content addSubview:self.frameLimitField];
+
+    self.targetLabel = [self label:@"" frame:NSMakeRect(24, 306, 472, 18) size:12 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor alignment:NSTextAlignmentLeft];
+    [content addSubview:self.targetLabel];
+
+    DropView *drop = [[DropView alloc] initWithFrame:NSMakeRect(24, 126, 472, 166)];
     __weak typeof(self) weakSelf = self;
     drop.fileHandler = ^(NSURL *url) {
         [weakSelf selectURL:url];
     };
     [content addSubview:drop];
 
-    self.titleLabel = [self label:@"Drop image/GIF here" frame:NSMakeRect(48, 188, 344, 26) size:18 weight:NSFontWeightSemibold color:NSColor.labelColor alignment:NSTextAlignmentCenter];
+    self.titleLabel = [self label:@"Drop image/GIF here" frame:NSMakeRect(48, 222, 424, 26) size:18 weight:NSFontWeightSemibold color:NSColor.labelColor alignment:NSTextAlignmentCenter];
     [content addSubview:self.titleLabel];
 
-    self.detailsLabel = [self label:@"128 x 128 target, max 120 frames" frame:NSMakeRect(48, 145, 344, 42) size:13 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor alignment:NSTextAlignmentCenter];
+    self.detailsLabel = [self label:@"Choose a keyboard model, then upload an image or GIF." frame:NSMakeRect(48, 176, 424, 42) size:13 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor alignment:NSTextAlignmentCenter];
     self.detailsLabel.maximumNumberOfLines = 2;
     [content addSubview:self.detailsLabel];
 
     self.chooseButton = [NSButton buttonWithTitle:@"Choose Image/GIF" target:self action:@selector(chooseFile:)];
-    self.chooseButton.frame = NSMakeRect(144, 104, 152, 32);
+    self.chooseButton.frame = NSMakeRect(176, 138, 168, 30);
     self.chooseButton.bezelStyle = NSBezelStyleRounded;
     [content addSubview:self.chooseButton];
 
-    self.statusLabel = [self label:@"Connect F75 Max in wired USB mode before uploading." frame:NSMakeRect(24, 58, 392, 18) size:12 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor alignment:NSTextAlignmentCenter];
+    self.statusLabel = [self label:@"Connect the AULA keyboard in wired USB mode before uploading." frame:NSMakeRect(24, 86, 472, 18) size:12 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor alignment:NSTextAlignmentCenter];
     [content addSubview:self.statusLabel];
 
-    self.progress = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(24, 34, 392, 12)];
+    self.progress = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(24, 62, 472, 12)];
     self.progress.minValue = 0;
     self.progress.maxValue = 100;
     self.progress.doubleValue = 0;
     self.progress.indeterminate = NO;
     [content addSubview:self.progress];
 
-    self.uploadButton = [NSButton buttonWithTitle:@"Send to F75 Max" target:self action:@selector(upload:)];
-    self.uploadButton.frame = NSMakeRect(148, 252, 144, 32);
+    self.uploadButton = [NSButton buttonWithTitle:@"Send to Keyboard" target:self action:@selector(upload:)];
+    self.uploadButton.frame = NSMakeRect(184, 22, 152, 32);
     self.uploadButton.bezelStyle = NSBezelStyleRounded;
     self.uploadButton.enabled = NO;
     [content addSubview:self.uploadButton];
 
+    [self applyPreset:KeyboardPresets().firstObject];
     [self.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
 }
@@ -192,16 +241,114 @@ static ImageInfo *InspectImage(NSURL *url) {
     return label;
 }
 
+- (NSTextField *)numberField:(NSRect)frame {
+    NSTextField *field = [[NSTextField alloc] initWithFrame:frame];
+    field.delegate = self;
+    field.alignment = NSTextAlignmentRight;
+    field.font = [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightRegular];
+    return field;
+}
+
+- (KeyboardPreset *)selectedPreset {
+    NSInteger index = self.modelPopup.indexOfSelectedItem;
+    NSArray<KeyboardPreset *> *presets = KeyboardPresets();
+    if (index < 0 || (NSUInteger)index >= presets.count) {
+        return presets.firstObject;
+    }
+    return presets[(NSUInteger)index];
+}
+
+- (void)modelChanged:(id)sender {
+    [self applyPreset:self.selectedPreset];
+}
+
+- (void)applyPreset:(KeyboardPreset *)preset {
+    self.widthField.stringValue = [NSString stringWithFormat:@"%lu", (unsigned long)preset.width];
+    self.heightField.stringValue = [NSString stringWithFormat:@"%lu", (unsigned long)preset.height];
+    self.frameLimitField.stringValue = [NSString stringWithFormat:@"%lu", (unsigned long)preset.recommendedFrames];
+    [self refreshValidation];
+}
+
+- (void)controlTextDidChange:(NSNotification *)notification {
+    [self refreshValidation];
+}
+
+- (NSUInteger)integerFromField:(NSTextField *)field {
+    NSInteger value = field.integerValue;
+    return value > 0 ? (NSUInteger)value : 0;
+}
+
+- (NSUInteger)targetWidth {
+    return [self integerFromField:self.widthField];
+}
+
+- (NSUInteger)targetHeight {
+    return [self integerFromField:self.heightField];
+}
+
+- (NSUInteger)frameLimit {
+    NSUInteger value = [self integerFromField:self.frameLimitField];
+    return value > 255 ? 255 : value;
+}
+
+- (void)refreshValidation {
+    KeyboardPreset *preset = self.selectedPreset;
+    NSUInteger width = self.targetWidth;
+    NSUInteger height = self.targetHeight;
+    NSUInteger frameLimit = self.frameLimit;
+    BOOL validTarget = width > 0 && height > 0 && frameLimit > 0;
+
+    self.targetLabel.stringValue = [NSString stringWithFormat:@"%@ preset: %lu x %lu, recommended max %lu frames. Current target: %lu x %lu, sending up to %lu frame%@.",
+        preset.name,
+        (unsigned long)preset.width,
+        (unsigned long)preset.height,
+        (unsigned long)preset.recommendedFrames,
+        (unsigned long)width,
+        (unsigned long)height,
+        (unsigned long)frameLimit,
+        frameLimit == 1 ? @"" : @"s"
+    ];
+
+    if (!validTarget) {
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        self.statusLabel.stringValue = @"Width, height, and frame limit must be positive numbers.";
+        self.uploadButton.enabled = NO;
+        return;
+    }
+
+    if (!self.selectedInfo) {
+        self.statusLabel.textColor = NSColor.secondaryLabelColor;
+        self.statusLabel.stringValue = @"Connect the AULA keyboard in wired USB mode before uploading.";
+        self.uploadButton.enabled = NO;
+        return;
+    }
+
+    if (!self.selectedInfo.readable) {
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        self.statusLabel.stringValue = self.selectedInfo.status ?: @"Unsupported image file.";
+        self.uploadButton.enabled = NO;
+        return;
+    }
+
+    NSUInteger sentFrames = MIN(self.selectedInfo.frames, frameLimit);
+    BOOL willResize = self.selectedInfo.width != width || self.selectedInfo.height != height;
+    BOOL willTrim = self.selectedInfo.frames > frameLimit;
+
+    NSMutableArray<NSString *> *notes = [NSMutableArray array];
+    [notes addObject:willResize ? [NSString stringWithFormat:@"will fit to %lu x %lu", (unsigned long)width, (unsigned long)height] : @"size matches target"];
+    [notes addObject:willTrim ? [NSString stringWithFormat:@"will trim %lu to %lu frames", (unsigned long)self.selectedInfo.frames, (unsigned long)sentFrames] : [NSString stringWithFormat:@"will send %lu frame%@", (unsigned long)sentFrames, sentFrames == 1 ? @"" : @"s"]];
+
+    self.statusLabel.textColor = NSColor.secondaryLabelColor;
+    self.statusLabel.stringValue = [NSString stringWithFormat:@"Ready: %@.", [notes componentsJoinedByString:@", "]];
+    self.uploadButton.enabled = YES;
+}
+
 - (void)chooseFile:(id)sender {
     NSOpenPanel *panel = [NSOpenPanel openPanel];
     panel.canChooseFiles = YES;
     panel.canChooseDirectories = NO;
     panel.allowsMultipleSelection = NO;
-    if (@available(macOS 12.0, *)) {
-        panel.allowedContentTypes = @[UTTypeGIF, UTTypePNG, UTTypeJPEG, UTTypeImage];
-    } else {
-        panel.allowedFileTypes = @[@"gif", @"png", @"jpg", @"jpeg"];
-    }
+    panel.allowedContentTypes = @[UTTypeGIF, UTTypePNG, UTTypeJPEG, UTTypeImage];
     if ([panel runModal] == NSModalResponseOK) {
         [self selectURL:panel.URL];
     }
@@ -221,14 +368,16 @@ static ImageInfo *InspectImage(NSURL *url) {
         info.frames == 1 ? @"" : @"s",
         HumanSize(info.bytes)
     ];
-    self.statusLabel.stringValue = info.status ?: @"Ready.";
-    self.statusLabel.textColor = info.acceptable ? NSColor.secondaryLabelColor : NSColor.systemRedColor;
-    self.uploadButton.enabled = info.acceptable;
+    [self refreshValidation];
 }
 
 - (void)setBusy:(BOOL)busy {
+    self.modelPopup.enabled = !busy;
+    self.widthField.enabled = !busy;
+    self.heightField.enabled = !busy;
+    self.frameLimitField.enabled = !busy;
     self.chooseButton.enabled = !busy;
-    self.uploadButton.enabled = !busy && self.selectedInfo.acceptable;
+    self.uploadButton.enabled = !busy && self.selectedInfo.readable && self.targetWidth > 0 && self.targetHeight > 0 && self.frameLimit > 0;
 }
 
 - (NSURL *)probeURL {
@@ -236,7 +385,7 @@ static ImageInfo *InspectImage(NSURL *url) {
 }
 
 - (void)upload:(id)sender {
-    if (!self.selectedInfo.acceptable) {
+    if (!self.selectedInfo.readable || self.targetWidth == 0 || self.targetHeight == 0 || self.frameLimit == 0) {
         return;
     }
 
@@ -257,8 +406,10 @@ static ImageInfo *InspectImage(NSURL *url) {
     task.arguments = @[
         @"--wired",
         @"--screen-upload-image", self.selectedInfo.path,
-        @"--screen-max-frames", [NSString stringWithFormat:@"%lu", (unsigned long)MaxAllowedFrames],
-        @"--screen-fit", @"cover",
+        @"--screen-width", [NSString stringWithFormat:@"%lu", (unsigned long)self.targetWidth],
+        @"--screen-height", [NSString stringWithFormat:@"%lu", (unsigned long)self.targetHeight],
+        @"--screen-max-frames", [NSString stringWithFormat:@"%lu", (unsigned long)self.frameLimit],
+        @"--screen-fit", @"contain",
         @"--screen-pixel-format", @"rgb565le",
         @"--screen-pixel-layout", @"row",
         @"--screen-slot", @"1",
@@ -328,7 +479,7 @@ static ImageInfo *InspectImage(NSURL *url) {
     self.statusLabel.textColor = NSColor.systemRedColor;
     self.statusLabel.stringValue = message;
     NSAlert *alert = [NSAlert new];
-    alert.messageText = @"F75 GIF Uploader";
+    alert.messageText = @"AULA GIF Uploader";
     alert.informativeText = message;
     [alert addButtonWithTitle:@"OK"];
     [alert beginSheetModalForWindow:self.window completionHandler:nil];
@@ -337,6 +488,8 @@ static ImageInfo *InspectImage(NSURL *url) {
 @end
 
 int main(int argc, const char *argv[]) {
+    (void)argc;
+    (void)argv;
     @autoreleasepool {
         NSApplication *app = [NSApplication sharedApplication];
         AppDelegate *delegate = [AppDelegate new];

@@ -5,15 +5,15 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>F75GifUploader</string>
+	<string>AulaGifUploader</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.stimong.f75-gif-uploader</string>
+	<string>com.stimong.aula-gif-uploader</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>F75 GIF Uploader</string>
+	<string>AULA GIF Uploader</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -27,6 +27,6 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>Independent utility. Not affiliated with Aula or Epomaker.</string>
 	<key>NSInputMonitoringUsageDescription</key>
-	<string>F75 GIF Uploader reads HID acknowledgements from the Aula F75 Max while uploading screen images.</string>
+	<string>AULA GIF Uploader reads HID acknowledgements from the connected Aula keyboard while uploading screen images.</string>
 </dict>
 </plist>

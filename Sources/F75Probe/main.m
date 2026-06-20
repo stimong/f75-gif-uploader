@@ -1933,12 +1933,12 @@ static void writeCGImageFrame(
     uint8_t *stream,
     size_t frameOffset,
     CGImageRef image,
+    size_t width,
+    size_t height,
     ScreenFitMode fitMode,
     ScreenPixelFormat pixelFormat,
     ScreenPixelLayout pixelLayout
 ) {
-    const size_t width = 128;
-    const size_t height = 128;
     const size_t bytesPerPixel = 4;
     const size_t bytesPerRow = width * bytesPerPixel;
 
@@ -2017,6 +2017,8 @@ static uint8_t *createScreenImageStream(
     uint8_t stillFrameCount,
     uint8_t stillFrameDelay,
     uint8_t maxAnimatedFrames,
+    size_t width,
+    size_t height,
     ScreenFitMode fitMode,
     ScreenPixelFormat pixelFormat,
     ScreenPixelLayout pixelLayout,
@@ -2059,8 +2061,6 @@ static uint8_t *createScreenImageStream(
         frameCount = 1;
     }
 
-    const size_t width = 128;
-    const size_t height = 128;
     const size_t headerLength = 256;
     const size_t frameBytes = width * height * 2;
     const size_t payloadLength = headerLength + ((size_t)frameCount * frameBytes);
@@ -2085,7 +2085,7 @@ static uint8_t *createScreenImageStream(
         if (!image) {
             continue;
         }
-        writeCGImageFrame(stream, headerLength + ((size_t)frame * frameBytes), image, fitMode, pixelFormat, pixelLayout);
+        writeCGImageFrame(stream, headerLength + ((size_t)frame * frameBytes), image, width, height, fitMode, pixelFormat, pixelLayout);
         CGImageRelease(image);
     }
 
@@ -2343,6 +2343,8 @@ static void sendScreenImageUpload(
     uint8_t stillFrameCount,
     uint8_t stillFrameDelay,
     uint8_t maxAnimatedFrames,
+    size_t width,
+    size_t height,
     ScreenFitMode fitMode,
     ScreenPixelFormat pixelFormat,
     ScreenPixelLayout pixelLayout,
@@ -2370,6 +2372,8 @@ static void sendScreenImageUpload(
         stillFrameCount,
         stillFrameDelay,
         maxAnimatedFrames,
+        width,
+        height,
         fitMode,
         pixelFormat,
         pixelLayout,
@@ -2396,12 +2400,14 @@ static void sendScreenImageUpload(
     const uint8_t exitCommand[] = {0x04, 0x02};
 
     printf(
-        "Prepared %s upload for screen slot %d%s%s%s: sourceFrames=%zu, sending=%u, payload=%zu, padded=%zu, chunks=%u, file=%s\n",
+        "Prepared %s upload for screen slot %d%s%s%s: size=%zux%zu, sourceFrames=%zu, sending=%u, payload=%zu, padded=%zu, chunks=%u, file=%s\n",
         animated ? "animated image" : "still image",
         slot,
         controlPrefixed ? " with prefixed control" : "",
         bulkPrefixed ? " with prefixed bulk" : "",
         waitForChunkStatus ? " with chunk status wait" : "",
+        width,
+        height,
         sourceFrameCount,
         frameCount,
         payloadLength,
@@ -2790,6 +2796,16 @@ int main(int argc, const char *argv[]) {
             screenMaxFramesInt = 255;
         }
         uint8_t screenMaxFrames = (uint8_t)screenMaxFramesInt;
+        int screenWidthInt = intArgument(argc, argv, "--screen-width", 128);
+        int screenHeightInt = intArgument(argc, argv, "--screen-height", 128);
+        if (screenWidthInt < 1) {
+            screenWidthInt = 128;
+        }
+        if (screenHeightInt < 1) {
+            screenHeightInt = 128;
+        }
+        size_t screenWidth = (size_t)screenWidthInt;
+        size_t screenHeight = (size_t)screenHeightInt;
         bool onlyDongle = dongleArgument(argc, argv);
         bool onlyWired = wiredArgument(argc, argv);
 
@@ -2960,7 +2976,7 @@ int main(int argc, const char *argv[]) {
         }
 
         if (screenUploadImagePath) {
-            sendScreenImageUpload(monitors, count, screenUploadImagePath, screenSlot, screenUploadControlPrefixed, screenUploadBulkPrefixed, screenFrames, screenDelay, screenMaxFrames, screenFitMode, screenPixelFormat, screenPixelLayout, screenRepeatFirst, screenLoopFill, screenChunkDelaySeconds, screenChunkAck);
+            sendScreenImageUpload(monitors, count, screenUploadImagePath, screenSlot, screenUploadControlPrefixed, screenUploadBulkPrefixed, screenFrames, screenDelay, screenMaxFrames, screenWidth, screenHeight, screenFitMode, screenPixelFormat, screenPixelLayout, screenRepeatFirst, screenLoopFill, screenChunkDelaySeconds, screenChunkAck);
         }
 
         if (screenUSBPipeTestUpload) {
