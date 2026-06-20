@@ -1,4 +1,4 @@
-# AULA GIF Uploader
+# AULA GIF Uploader for Mac
 
 Tiny macOS uploader for AULA keyboard LCD GIF/image screens.
 
